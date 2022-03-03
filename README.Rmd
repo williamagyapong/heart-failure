@@ -19,6 +19,11 @@ The early detection of people with cardiovascular diseases or who are at high ca
 
 <!-- Various classification models, as can be found in the Predictive Model section of this report, will be explored with the hope of coming up with a model that has high prediction accuracy.  -->
 
+Ten different classification models were fitted to the heart failure data set. From these models, three classifiers - *Linear Discriminant Analysis (LDA)* model, *Logistic Regression* model, and *Random Forest* model - emerged as best models with the same predictive accuracy of `78 %`. The LDA model was dropped because it was the most complex model among the three since it was based on 11 predictors. The other two models were each based on only 4 predictors but the Random Forest model was chosen as the overall best model because of some advantages it has over the competing Logistic Regression model. That is, unlike the Logistic Regression model, the Random Forest model is non-linear classifier which does not require the data to be linearly separable. Therefore, it was concluded that  a Random Forest model with `Ejection Fraction`, `Serum Creatinine`, `Anaemia`, and `High Blood Pressure` is the best model for predicting the death event of a patient with a heart failure.
+
+I consider this to be a preliminary analysis since  more can be done to improve the predictive power. For instance, treating the issue of class imbalance and handling outliers could enhance model performance.
+
+Please see the full report [here](https://github.com/williamagyapong/heart-failure/blob/master/final_project.pdf).
 
 <!-- badges: start -->
 <!-- badges: end -->
