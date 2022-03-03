@@ -1,0 +1,750 @@
+---
+title: "Predicting Mortality by Heart Failure"
+author: "Willliam Ofosu Agyapong"
+date: "5/6/2021"
+output:
+  pdf_document:
+    number_sections: true
+    extra_dependencies: ["float"]
+  html_document: default
+---
+
+
+```{r setup, warning=F, message=F, include=FALSE}
+knitr::opts_chunk$set(eval=F,echo = TRUE, fig.pos = "!H", out.extra = "")
+
+# library(data.table)
+library(ggimage)
+library(tidyverse)
+library(RColorBrewer)
+library(ggcorrplot) # for correlation plot
+library(ggthemes)
+library(patchwork)
+library(knitr)
+library(kableExtra)
+library(VIM)
+library(caret) # provides statistical models
+# library(yardstick)
+library(cvms)
+library(scales)
+
+set.seed(05062021)
+```
+
+# Introduction <br>
+
+According to the World Health Organization, cardiovascular diseases (CVDs) are the number one cause of death globally, taking an estimated 17.9 million lives each year, which accounts for 31% of all deaths worlwide. Of these deaths, 85% are due to heart attack and stroke. Heart failure is a common event caused by cardiovascular diseases. 
+
+The early detection of people with cardiovascular diseases or who are at high cardiovascular risk due to the presence of one or more risk factors is paramount to reducing deaths arising from heart failures. As a result, predictive models become indispensable. 
+
+## Objective
+
+The dataset explored in this project contains 12 features that can be used to predict mortality by heart failure. The goal of this project, therefore, is to **identify an appropriate classification model that can accurately predict the survival of patients with heart failure**. 
+
+Various classification models, as can be found in the Predictive Model section of this report, will be explored with the hope of coming up with a model that has high prediction accuracy. 
+
+## Data Description
+
+The data used in this report were obtained from Kaggle. As reported by the authors of the data, Chicco and Jurman (2020), the data come from medical records of patients having heart failure that were collected at the Faisalabad Institute of Cardiology and at the Allied Hospital in Faisalabad, from April to December, 2015. The dataset consists of 299 observations for 13 different variables.There are no missing values. This dataset is for the prediction of heart failure based on multiple attributes such as diabetes, sex, smoking, high blood pressure, among others. The **Death event** variable is the response or target variable. A list of all variables and relevant information for each variable is included in Table 1. Though the time feature seems to be an important predictor, I feel there is not much information about this variable for me to include it in the  modeling process so it was not used in the search for the best model. 
+
+```{r data-cleaning, warning=F, message=F, echo=F, eval=T}
+heart_dat <- read.csv("heart_failure_clinical_records_dataset.csv")
+
+# Rename some of the variables
+heart_dat <- heart_dat %>%
+  rename(CPK=creatinine_phosphokinase,
+         ejection_frac = ejection_fraction,
+         HBP = high_blood_pressure,
+         death_event = DEATH_EVENT
+         )
+```
+
+
+```{r variables-description, echo=F, eval=T}
+table1 <- data.frame(rbind(c("Age", "Age of the patient", "Years", paste("[",min(heart_dat$age),",..., ", max(heart_dat$age),"]")),
+                           c("Anaemia","Decrease of red blood cells or hemoglobin","Binary", "0: No, 1: Yes"), 
+                           c("High blood pressure (HBP)", "If a patient has HBP", "Binary", "0: No, 1: Yes"), 
+                           c("Creatinine phosphokinase (CPK)", "Level of the CPK enzyme in the blood", "mcg/L", paste("[", min(heart_dat$CPK),",...,", max(heart_dat$CPK),"]")), 
+                           c("Diabetes", "If the patient has diabetes", "Binary", "0: No, 1: Yes"),
+                           c("Ejection fraction", "Percentage of blood leaving the heart at each contraction", "Percentage", paste("[", min(heart_dat$ejection_frac),",...,", max(heart_dat$ejection_frac),"]")),
+                           c("Sex", "Woman or man", "Binary", "0: Woman, 1: Man"), 
+                           c("Platelets", "Platelets in the blood", "kiloplatelets/mL", paste("[", min(heart_dat$platelets),",...,", max(heart_dat$platelets),"]")),
+                           c("Serum creatinine", "Level of creatinine in the blood", "mg/dL", paste("[", min(heart_dat$serum_creatinine),",...,", max(heart_dat$serum_creatinine),"]")), 
+                           c("Serum sodium", "Level of sodium in the blood", "mEq/L", paste("[", min(heart_dat$serum_sodium),",...,", max(heart_dat$serum_sodium),"]")), 
+                           c("Smoking", "If the patient smokes", "Binary", "0: No, 1: Yes"), 
+                           c("Time", "Follow-up period", "Days", paste("[", min(heart_dat$time),",...,", max(heart_dat$time),"]")),
+                           c("Death event", "If the patient died during the follow-up period", "Binary", "0: No, 1: Yes")))
+names(table1) <- c("Variable Name", "Description", "Measurement Unit", "Range/Level")
+
+kable(table1, booktabs=T, linesep="", 
+      caption = "Variables in the heart failure data set")%>%
+       kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position", "scale_down"))
+```
+<br>
+
+**Note:** *mcg/L: micrograms per liter. mL: microliter. mEq/L: milliequivalents per litre*
+
+```{r warning=F, message=F, echo=F}
+tail <- heart_dat[(nrow(heart_dat)-3):nrow(heart_dat),]
+table2 <- rbind(heart_dat[1:4,], rep("...", 13), tail)
+table2 <- cbind(c(1:4, "...", (nrow(heart_dat)-3):nrow(heart_dat)), table2)
+names(table2) <- c(" ", names(heart_dat))
+rownames(table2) <- NULL
+kable(table2, align="cr", booktabs=T, linesep="",
+      caption = "First and last four observations in the data")%>%
+       kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position", "scale_down"))
+```
+
+
+
+# Eploratory Data Analysis
+
+Before proceeding to fit the models, it is important to gain some initial insight  about the data. To this end, we look at the distributions of our target variable (death event) and all the predictor variables.
+
+```{r warning=F, message=F, echo=F}
+# Convert binary outcomes to factors
+heart_dat <- heart_dat %>%
+mutate(death_event = factor(death_event, levels = c(0,1), labels = c("Survived", "Died")),
+         anaemia = factor(anaemia, levels = c(0,1), labels = c("No", "Yes")),
+         diabetes = factor(diabetes, levels = c(0,1), labels = c("No", "Yes")),
+         HBP = factor(HBP, levels = c(0,1), labels = c("No", "Yes")),
+         sex = factor(sex, levels = c(0, 1), labels = c("Woman","Man")),
+         smoking = factor(smoking, levels = c(0,1), labels = c("No", "Yes")))
+
+# Get all the continuous predictors
+cont_vars <- heart_dat %>%
+  dplyr::select(age, CPK, ejection_frac, platelets, serum_creatinine, serum_sodium, time)
+
+# Get all the binary (categorical) predictors
+bi_vars <- heart_dat %>%
+  dplyr::select(death_event, anaemia, diabetes, HBP, sex, smoking)
+```
+
+## Distribution of Target Variable 
+
+Figure 1 shows how the death event (survival) is distributed among the patients involved in the study. As can be seen the data used is not evenly distributed between patients who died and patients who survived heart failures. 
+
+```{r warning=F, message=F, echo=F}
+plotdf <- heart_dat %>%
+  group_by(death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+ggplot(plotdf, aes(death_event,pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "dodge")  +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="Death event", y="Percent of patients", title="Figure 1: Distribution of Death Event") +
+  annotate("text", x=2.1, y= 0.5, label="There are approximately \n 32% positives and 67% negatives
+ ", color="red") +
+  theme_classic() +
+  theme(legend.position = "none")
+```
+
+ <br><br>
+ 
+## Distribution of Categorical Predictors by Target Variable
+ 
+**Figure 2:** The effect of *Gender*, *Anaemia*, *Diabetes*, *High Blood Pressure*, and *Smoking* on survival.
+
+```{r warning=F, message=F, echo=F}
+plotdf <- heart_dat %>%
+  group_by(sex, death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+p1 <- ggplot(plotdf, aes(sex, pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="Sex",y="Percent of patients", fill="Death Event") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+plotdf <- heart_dat %>%
+  group_by(anaemia, death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+p2 <- ggplot(plotdf, aes(anaemia, pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="Anaemia status",y="", fill="Death Event") +
+  theme_classic() +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+plotdf <- heart_dat %>%
+  group_by(diabetes, death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+p3 <- ggplot(plotdf, aes(diabetes, pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="Diabetes status",y="Percent of patients", fill="Death Event") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+plotdf <- heart_dat %>%
+  group_by(HBP, death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+p4 <- ggplot(plotdf, aes(HBP, pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="HBP status",y="", fill="Death Event") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+plotdf <- heart_dat %>%
+  group_by(smoking, death_event) %>%
+  summarise(n=n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = percent(pct))
+
+p5 <- ggplot(plotdf, aes(smoking, pct, fill=death_event)) + 
+  geom_bar(stat = "identity",position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.2), label=percent) +
+  geom_text(aes(label = lbl), size=3, position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette="Set2") + 
+  labs(x="Smoking status",y="", fill="Death Event") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+        )
+
+# display plots in a grid layout
+(p1 + p2) / (p3 + p4 + p5)
+```
+
+<br><br>
+From **Figure 2**, we can see that, whether a patient died or survived does not appear to depend on their sex orientation, diabetes and smoking status since the death event is distributed equally across the two levels of these variables. However, the anaemia and high blood pressure status of the patients seem to play a role in their survival, though not very significant. Hence these two predictor variables are likely to have some impact on our predictive model. Overall, there  appears to be little effect of all these categorical predictor variables on the target variable, `death event`.
+
+
+```{r echo=FALSE}
+# sum_table <- heart_dat %>%
+#   group_by(death_event) %>%
+#   summarise(across(where(is.double), list(mean = mean, sd = sd)))
+#   
+```
+
+## Distribution of Continuous Predictors by Target Variable
+
+**Figure 3:** Distribution of continuous predictors grouped by the Death Event
+```{r echo=F}
+# set a global theme for all plots
+theme_set(theme_classic())
+
+b1 <- ggplot() +
+  geom_boxplot(aes(x=age, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="Age", y="Death event") +
+  theme(legend.position = "none")
+
+
+b3 <- ggplot() + 
+  geom_boxplot(aes(x=CPK, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="CPK", y="") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+b4 <- ggplot() +
+  geom_boxplot(aes(x=ejection_frac, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="Ejection Fraction", y="Death event") +
+  theme(legend.position = "none")
+
+b5 <- ggplot() +
+  geom_boxplot(aes(x=platelets, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="Platelets", y="") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+b6 <- ggplot() +
+  geom_boxplot(aes(x=serum_creatinine, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="Serum Creatinine", y="") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+b7 <- ggplot() +
+  geom_boxplot(aes(x=serum_sodium, y=death_event, fill=death_event), data = heart_dat) +
+  scale_fill_brewer(palette="Set2") +
+  labs(x="Serum Sodium", y="Death event") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+(b1 + b7 + b3)/(b4 + b5 + b6)
+```
+<br>
+While there is only one high outlier on th Age predictor, the rest of the continuous predictors have many outliers. Additionally, apart from the  Age variable, all the other predictors are highly skewed with CPK, Ejection Fraction, Platelets, and Serum Creatinine  skewed to the right, and Serum Creatinine skewed to the left. 
+
+The median Age, Serum Sodium, Ejection Fraction, and Serum Creatinine differ between the patients who died and those that survived, suggesting that these variables might play an important role in predicting the `death event`. There is high variability in Age, followed by Ejection Fraction, Serum Sodium, and the Platelets, with CPK and Serum Creatinine having low variability. As should be expected, the risk of dying is high among older patients. Also, low levels of Ejection Fraction and Serum Sodium appear to be associated with high death risk, whereas high levels of Serum Creatinine seem to be associated with high death risk.
+
+From these observations, Serum Creatinine is likely to be the most important predictor, followed by Ejection Fraction.  So, in all, the EDA has revealed four variables, including Serum Creatinine, Ejection Fraction, Anaemia status, and High Blood Pressure status, that appear to have much contribution on the survival of patients with hearth failure. These variables will be explored further in the Predictive Modeling section.
+
+
+```{r echo=F}
+
+cor.mat <- cor(cont_vars)
+ggcorrplot(cor.mat, title="Figure 4: Correlation between the continuous predictors", lab = T, lab_size = 2)
+
+rm(cor.mat)
+```
+<br><br>
+According to Figure 4, there is a weak correlation among the continuous predictors. This suggests no issue of multicolinearity. 
+
+# Predictive Modeling
+
+In this part of the analysis, we fit several classification models to the death event as a function of all the other 12 variables in the dataset. For model validation purposes, the heart failure data were split into $80 \%$ training set and $20\%$ testing set. This meant that the models were trained on 240 observations and the remaining 59 observations were used for predictions from which the trained models were evaluated for predictive performance. In training the models, a 5-fold cross validation (CV) was adopted, partly due to the relatively small number of observations in the data and computation time. However, a leave-one-out cross-validation (LOOCV) would have been preferred to eliminate the randomness in results but it turned out to be too computationally expensive, especially, for the Tree-based models and the Support Vector Classifiers. 
+
+Due to the sensitivity of the KNN model to different scales, the variables were normalized and kept across the other models for consistency.
+
+## Classification Models
+
+Six unique models, including Logistic regression, Linear Discriminant Analysis (LDA), K-nearest neighbors (KNN), 2 Regularized models, 2 Tree-based models and 3 Support Vector Classifiers, were considered as candidate models for predicting whether a patient will die from a heart failure. A full model including all the 12 predictor variables and a reduced were fitted. The reduced models were constructed based on `Ejection Fraction`, `Serum Creatinine`, `Anaemia`, and `High Blood Pressure`, which appeared to be the four most important predictors from the EDA section. **Table 3** provides information about these models regarding the values of parameters used in the fitting process. 1000 trees were used in training the two Tree-based models. 
+
+
+```{r echo=FALSE}
+mod.params <- data.frame(rbind(c("KNN", "K: 1 - 10 by 1" ),
+                          c("Logistic Regression", "" ),
+                          c("LDA", ""),
+                          c("LASSO  Regression", "Lambda: 0 - 0.1 by 0.1"),
+                          c("Ridge Regression", "Lambda: 0 - 0.1 by 0.1"),
+                          c("Bagging", "mtry: 11; ntree: 1000"),
+                          c("Random Forest", "mtry: 1-10 by 1; ntree: 1000"),
+                          c("SVC", "Cost: 0.1, 0.2, 1, 1.4, 1.6, 10"),
+                          c("SVM (Polynomial Kernel)", "Cost: 0.1, 0.2, 1, 1.4, 1.6, 10; Degree: 2 - 5 by 1; Scale: 1"),
+                          c("SVM (Radial Kernel)", "Cost: 0.1, 0.2, 1, 1.4, 1.6, 10; Sigma: 0.01, 0.05, 0.1, 0.5, 1")))
+
+names(mod.params) <- c("Model", "Parameters used")
+
+kable(mod.params, align = "ll", booktabs=T, linesep="",
+      caption = "Table 3: Candidate models and their parameter values") %>%
+  kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position"))
+```
+<br>
+
+
+```{r echo=FALSE}
+# set.seed(05062021)
+
+#-------- Data Processing ---------
+# Split data into testing and training sets
+test_index <- sample(1:nrow(heart_dat), size = (0.2*nrow(heart_dat)))
+
+# Testing set
+test_set <- heart_dat[test_index,]
+# Training set
+train_set <- heart_dat[-test_index,]
+
+
+#------ Model building -----------
+# Create a wrapper function to abstract away the common aspects of model fitting
+fit.model <- function(method, tunegrid="", data=NULL, formula=NULL) {
+  
+  data <- train_set
+  if(is.null(formula)) formula <- death_event ~. -time
+      
+  # Train the model
+   train(
+           formula,
+           data = data,
+           method = method,
+           trControl = trainControl(method = "cv", 5),
+           preProcess = c("center","scale"),
+           tuneGrid = tunegrid)
+}
+
+
+# Logistic Regression
+log <-  train(death_event ~ .-time,
+                 data=train_set,
+                 method="glm",
+                 family = binomial(link = "logit"),
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale")) 
+
+# KNN
+knn <- fit.model("knn", data.frame(k=1:10))
+
+# LDA
+lda <- train(death_event ~ .,
+                 data=train_set,
+                 method="lda",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"))
+
+#-------------- Elastic Net Models -------------------
+# fit a LASSO model
+lasso <- fit.model("glmnet", expand.grid(.alpha=1, .lambda=seq(0,0.1,0.01)))
+
+# Fit a Ridge regression model
+ridge <- fit.model("glmnet", expand.grid(.alpha=0, .lambda=seq(0,0.1,0.01)))
+
+
+# Bagging
+# bag <- fit.model("rf", data.frame(mtry=11))
+bag <- train(death_event ~ .-time,
+                 data=train_set,
+                 method="rf",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"),
+                tuneGrid = data.frame(mtry=11),
+                ntree = 1000) 
+
+
+# Random Forest
+# rf <- fit.model("rf", data.frame(mtry=1:10))
+rf <- train(death_event ~ .-time,
+                 data=train_set,
+                 method="rf",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"),
+                tuneGrid = data.frame(mtry=1:10),
+                ntree = 1000) 
+
+#-------------- 
+
+# Support Vector Machine with polynomial kernel
+svc <- fit.model("svmLinear", data.frame(C=c(0.1,0.2, 1,1.4, 1.6, 10)))
+
+# SVM with polynomial kernel
+svmP <- fit.model("svmPoly", expand.grid(C=c(0.1,0.2, 1, 1.4, 1.6, 10),
+                                 degree=2:5,
+                                 scale=1))
+
+# Support Vector Machine with radial kernel
+svmR <- fit.model("svmRadial", expand.grid(C=c(0.1,0.2, 1,1.4, 1.6, 10),                                 sigma=c(0.01, 0.05,0.1,0.5,1)))
+```
+
+
+```{r echo=FALSE}
+#----- Exploring potentially 4 most important variables --------------
+formula <-  death_event ~ ejection_frac+serum_creatinine+anaemia+HBP
+# Logistic Regression
+log2 <-  train(formula,
+                 data=train_set,
+                 method="glm",
+                 family = binomial(link = "logit"),
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale")) 
+
+# KNN
+knn2 <- fit.model("knn", data.frame(k=1:10), formula)
+
+# LDA
+lda2 <- train(formula,
+                 data=train_set,
+                 method="lda",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"))
+
+#-------------- Elastic Net Models -------------------
+# fit a LASSO model
+lasso2 <- fit.model("glmnet", expand.grid(.alpha=1, .lambda=seq(0,0.1,0.01)), formula)
+
+# Fit a Ridge regression model
+ridge2 <- fit.model("glmnet", expand.grid(.alpha=0, .lambda=seq(0,0.1,0.01)), formula)
+
+
+# Bagging
+# bag <- fit.model("rf", data.frame(mtry=11))
+bag2 <- train(formula,
+                 data=train_set,
+                 method="rf",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"),
+                tuneGrid = data.frame(mtry=4),
+                ntree = 1000) 
+
+
+# Random Forest
+# rf <- fit.model("rf", data.frame(mtry=1:10))
+rf2 <- train(formula,
+                 data=train_set,
+                 method="rf",
+                trControl = trainControl(method = "cv", 5),
+                preProcess = c("center", "scale"),
+                tuneGrid = data.frame(mtry=1:3),
+                ntree = 1000) 
+
+#-------------- 
+
+# Support Vector Machine with polynomial kernel
+svc2 <- fit.model("svmLinear", data.frame(C=c(0.1,0.2, 1,1.4, 1.6, 10)), formula)
+
+# SVM with polynomial kernel
+svmP2 <- fit.model("svmPoly", expand.grid(C=c(0.1,0.2, 1, 1.4, 1.6, 10),
+                                 degree=2:5,
+                                 scale=1), formula)
+
+# Support Vector Machine with radial kernel
+svmR2 <- fit.model("svmRadial", expand.grid(C=c(0.1,0.2, 1,1.4, 1.6, 10),                                 sigma=c(0.01, 0.05,0.1,0.5,1)), formula)
+```
+
+
+## Results and Model Comparison
+
+The results obtained from training the various classification models with all 11 predictors and a subset of 4 predictors are presented in Table 4 and Table 5, respectively. Specifically, we report the testing misclassification rates of all the models as well as the best values chosen for some of the model parameters that were tuned. The misclassification rates were computed from predictions made on the testing set. Misclassification rate is the proportion of wrongly predicted classes (survived or died), and hence, lower values are indicative of better predictive performance.
+
+
+```{r echo=FALSE}
+# Create a custom confusion matrix with performance metrics
+metrics <- function(model_object, test_data=NULL) {
+  if(is.null(test_data)) test_data <- test_set
+  
+  prediction <- predict(model_object, test_data) 
+  target <- test_data$death_event
+  
+  tbl <- table(prediction, target)
+  tbl_new <- as.data.frame(tbl)
+  colnames(tbl_new) <- c("Predicted","Actual", "Freq")
+  
+  # Compute performance metrics
+  freq <- tbl_new$Freq
+  accuracy <- (freq[1]+freq[4])/(sum(freq)) # correct classification rate
+  sensi <- freq[4]/sum(freq[3:4])  # sensitivity
+  speci <- freq[1]/sum(freq[1:2])  # specificity
+  ppv <-  freq[4]/(freq[2]+freq[4]) # Positive Predictive Value
+  npv <- freq[1]/(freq[1]+freq[3]) # Positive Predictive Value
+ # Returned outputs
+ return(list(
+   accuracy = round(accuracy*100, 3),
+   mcr = round((1-accuracy)*100,2),
+   sens = sensi,
+   spec = speci,
+   ppv = ppv,
+   npv = npv,
+   confMat = tbl,
+   confMat2 = tbl_new
+ ))
+}
+```
+
+
+```{r echo=FALSE}
+
+#------- Compute performance metrics for the full models ---------------
+log.metric <- metrics(log)
+lda.metric <- metrics(lda)
+knn.metric <- metrics(knn)
+lasso.metric <- metrics(lasso)
+ridge.metric <- metrics(ridge)
+bag.metric <- metrics(bag)
+rf.metric <- metrics(rf)
+svc.metric <- metrics(svc)
+svmP.metric <- metrics(svmP)
+svmR.metric <- metrics(svmR)
+
+mod.sum <- data.frame(rbind(c("KNN", knn$bestTune$k, rep("-",5),  knn.metric$mcr),
+                          c("Logistic Regression", rep("-",6), log.metric$mcr),
+                          c("LDA", rep("-",6), lda.metric$mcr),
+                          c("LASSO  Regression", "-", lasso$bestTune$lambda, rep("-",4), lasso.metric$mcr),
+                          c("Ridge Regression", "-", ridge$bestTune$lambda,rep("-",4), ridge.metric$mcr),
+                          c("Bagging", rep("-",6), bag.metric$mcr),
+                          c("Random Forest", rep("-",5), rf$bestTune$mtry, rf.metric$mcr),
+                          c("SVC", "-","-", svc$bestTune$C, rep("-",3),  svc.metric$mcr),
+                          c("SVM (Polynomial Kernel)", "-", "-", svmP$bestTune$C,svmP$bestTune$degree, "-", "-", svmP.metric$mcr),
+                          c("SVM (Radial Kernel)", rep("-",2),svmP$bestTune$C, "-", svmR$bestTune$sigma, "-", svmR.metric$mcr)))
+
+names(mod.sum) <- c("Model", "K", "Lambda","Cost", "Degree", "Sigma", "Mtry", "Misclassification Rate (%)")
+
+kable(mod.sum, align = "lccccccc", booktabs=T, linesep="",
+      caption = "Results from the full models") %>%
+  kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position", "scale_down"))
+
+#------- Compute performance metrics for the reduced models ---------------
+log2.metric <- metrics(log2)
+lda2.metric <- metrics(lda2)
+knn2.metric <- metrics(knn2)
+lasso2.metric <- metrics(lasso2)
+ridge2.metric <- metrics(ridge2)
+bag2.metric <- metrics(bag2)
+rf2.metric <- metrics(rf2)
+svc2.metric <- metrics(svc2)
+svmP2.metric <- metrics(svmP2)
+svmR2.metric <- metrics(svmR2)
+
+mod2.sum <- data.frame(rbind(c("KNN", knn2$bestTune$k, rep("-",5),  knn2.metric$mcr),
+                          c("Logistic Regression", rep("-",6), log2.metric$mcr),
+                          c("LDA", rep("-",6), lda2.metric$mcr),
+                          c("LASSO  Regression", "-", lasso2$bestTune$lambda, rep("-",4), lasso2.metric$mcr),
+                          c("Ridge Regression", "-", ridge2$bestTune$lambda,rep("-",4), ridge2.metric$mcr),
+                          c("Bagging", rep("-",6), bag2.metric$mcr),
+                          c("Random Forest", rep("-",5), rf2$bestTune$mtry, rf2.metric$mcr),
+                          c("SVC", "-","-", svc2$bestTune$C, rep("-",3),  svc2.metric$mcr),
+                          c("SVM (Polynomial Kernel)", "-", "-", svmP2$bestTune$C,svmP2$bestTune$degree, "-", "-", svmP2.metric$mcr),
+                          c("SVM (Radial Kernel)", rep("-",2),svmP2$bestTune$C, "-", svmR2$bestTune$sigma, "-", svmR2.metric$mcr)))
+
+names(mod2.sum) <- c("Model", "K", "Lambda","Cost", "Degree", "Sigma", "Mtry", "Misclassification Rate (%)")
+
+kable(mod2.sum, align = "lccccccc", booktabs=T, linesep="",
+      caption = "Results from the reduced models") %>%
+  kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position", "scale_down"))
+```
+<br><br>
+
+Figure 5: Misclassification Rates  for the full models (Left) and the reduced models (Right)
+```{r echo=FALSE}
+mod.sum <- mod.sum %>%
+  mutate(mcr = as.double(`Misclassification Rate (%)`),
+         is_best = as.factor(ifelse(mcr==min(mcr), "best", "other")))
+
+p1<- ggplot(data = mod.sum, aes(x=reorder(Model, -mcr), y=mcr)) +
+  geom_bar(aes(fill=is_best),stat = "identity") +
+  scale_fill_manual(values=c("red","#00bfff")) +
+  geom_text(aes(label= str_c(mcr, "%"), size=1), hjust=0) +
+  theme_classic() +
+  labs(x="Models", y="Misclassification Rate (%)",
+       title="Figure 5: Misclassification Rates  for the full models") +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  coord_flip() 
+
+
+#------------- MCR for reduced models --------
+mod2.sum <- mod2.sum %>%
+  mutate(mcr = as.double(`Misclassification Rate (%)`),
+         is_best = as.factor(ifelse(mcr==min(mcr), "best", "other")))
+
+p2 <- ggplot(data = mod2.sum, aes(x=reorder(Model, -mcr), y=mcr)) +
+  geom_bar(aes(fill=is_best),stat = "identity") +
+  scale_fill_manual(values=c("red","#00bfff")) +
+  geom_text(aes(label= str_c(mcr, "%"), size=1), hjust=0) +
+  theme_classic() +
+  labs(x="", y="Misclassification Rate (%)",
+       title="Figure 6: Misclassification Rates  for the reduced models (with 4 predictors)") +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  coord_flip() 
+
+p1 
+
+p2
+```
+
+From Figure 5, the model with the least misclassification rate is the Linear Discriminant (LDA) model. Therefore, LDA turns out to be the best model for predicting death event due to heart failure when all 11 predictors are taken into account. As can be seen, the Support Vector Classifier (SVC) came very close to our proposed model, with KNN and SVM with a polynomial kernel performing very poorly in this situation. Interestingly, the two regularization models (LASSO and Ridge) as well as the two Tree-based models performed equally. On the other hand, according to Figure 6, the Logistic regression and Random Forest happen to be the best models among the with only 4 predictors. SVM, KNN, LASSO, and Ridge continued to perform poorly. 
+
+Clearly, there are three competing models all with the lowest misclassification rate of 22.03% - the LDA model (based on 11 predictors), and the Logistic Regression model and Random Forest model both based on 4 predictors. Since simple models are preferable, the Random Forest and Logistic Regression models will be selected at this stage and studied furthered for the selection of an overall best model in the next section.
+
+
+## Best Models: Logistic Regression and Random Forest
+
+As noted from the previous section, the best models were selected based on the misclassification rates.  However, it is not clear what specific types of misclassifications were made, so we present confusion matrices. with the "Died" class as the positive response, using information from the confusion matrices, model performance metrics as included in Table 6 can be computed. In Figure 6, the confusion matrix on the left relates to the Logistic Regression model while the one on the right is for the Random Forest model. 
+
+**Figure 6:** Confusion Matrices <br>
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+cfm <- data.frame(log2.metric$confMat)
+names(cfm) <- c("prediction", "target", "n")
+cmplot1 <- plot_confusion_matrix(cfm,
+                      target_col = "target",
+                      prediction_col = "prediction",
+                      counts_col = "n",
+  add_normalized = FALSE,
+  add_col_percentages = FALSE,
+  add_row_percentages = FALSE,
+  place_x_axis_above = TRUE,
+  font_counts = font(
+    size = 8,
+    angle = 45,
+    color = "red"
+  ))
+
+cfm2 <- data.frame(rf2.metric$confMat)
+names(cfm2) <- c("prediction", "target", "n")
+cmplot2 <- plot_confusion_matrix(cfm2,
+                      target_col = "target",
+                      prediction_col = "prediction",
+                      counts_col = "n",
+  add_normalized = FALSE,
+  add_col_percentages = FALSE,
+  add_row_percentages = FALSE,
+  place_x_axis_above = TRUE,
+  font_counts = font(
+    size = 8,
+    angle = 45,
+    color = "red"
+  ))
+
+cmplot1 + cmplot2
+```
+
+
+```{r echo=FALSE}
+best_metric <- data.frame(c("Accuracy","Sensitivity","Specificity","Positive Predictive Value", "Negative Predictive Value"), 
+                          c(log2.metric$accuracy,log2.metric$sens, log2.metric$spec, log2.metric$ppv, log2.metric$npv),
+                          c(rf2.metric$accuracy, rf2.metric$sens, rf2.metric$spec, rf2.metric$ppv, rf2.metric$npv))
+names(best_metric) <- c("Metrics", "Logistic Regression", "Random Forest")
+
+kbl(best_metric, digits =4, align = "ll", booktabs=T, linesep="",
+    caption = "Performance Metrics") %>%
+  kable_paper("hover", full_width = F)%>% 
+       kable_styling(font_size = 12, latex_options = c("HOLD_position"))
+```
+
+All the measures are relatively high, which suggests the Logistic Regression and Random Forest models did a good job at predicting the survival/death of patients with heart failures given the various predictors considered. However, the Logistic Regression model beats the Random Forest model in terms of specificity and positive predictive value, while the random forest model performed better in terms of sensitivity and negative predictive value. Since our goal is to obtain a model with the highest accuracy, both of these models can be considered, I will choose the Random Forest model over the Logistic Regression model for the reason that Decision Trees are non-linear classifiers which do not require the data to be linearly separable and can handle both cases.
+
+
+```{r  echo=FALSE}
+# library(ROCR)
+# 
+# df <- data.frame(ROCR.simple)
+# pred <- prediction(predict(lda, test_set), test_set$death_event)
+# perf <- performance(pred,"tpr","fpr")
+# plot(perf,colorize=TRUE)
+```
+
+
+
+# Conclusion 
+
+In this analysis ten different models were fitted to the heart failure data set. From these models, three classifiers - Linear Discriminant Analysis (LDA) model, Logistic Regression mode, and Random Forest model - emerged as best models with the same predictive accuracy. The LDA model was dropped because it was the most complex model among the three since it was based on 11 predictors. The other two models were each based on only 4 predictors but the Random Forest model was chosen as the overall best model because of some advantages it has over the competing Logistic Regression model. That is, unlike the Logistic Regression model, the Random Forest model is non-linear classifier which does not require the data to be linearly separable. Therefore, I will conclude that  a Random Forest model with `Ejection Fraction`, `Serum Creatinine`, `Anaemia`, and `High Blood Pressure` is the best model for predicting the death event of a patient with a heart failure.
+
+However, other models that consider interaction models and dimension reduction methods can be pursued in future analysis for possible improvement in performance. 
+
+
+# References{-}
+
+* Source of Data (Kaggle): https://www.kaggle.com/andrewmvd/heart-failure-clinical-data
+
+* Chicco, D., & Jurman, G. (2020). Machine learning can predict survival of patients with heart failure from serum creatinine and ejection fraction alone. BMC medical informatics and decision making, 20(1), 16.
+
+* Cardiovascular diseases (World Health Organization, 2017):  https://www.who.int/news-room/fact-sheets/detail/cardiovascular-diseases-(cvds)
+
+* https://cran.r-project.org/web/packages/cvms/vignettes/Creating_a_confusion_matrix.html
+
+
