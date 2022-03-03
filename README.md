@@ -41,7 +41,7 @@ improve the predictive power. For instance, treating the issue of class
 imbalance and handling outliers could enhance model performance.
 
 Please see the full report
-[here](https://github.com/williamagyapong/heart-failure/blob/master/final_project.pdf).
+[here](https://github.com/williamagyapong/heart-failure/blob/master/report.pdf).
 
 <!-- badges: start -->
 
