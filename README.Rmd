@@ -23,7 +23,7 @@ Ten different classification models were fitted to the heart failure data set. F
 
 I consider this to be a preliminary analysis since  more can be done to improve the predictive power. For instance, treating the issue of class imbalance and handling outliers could enhance model performance.
 
-Please see the full report [here](https://github.com/williamagyapong/heart-failure/blob/master/report.pdf).
+Please see the full report [here](https://github.com/williamagyapong/heart-failure/blob/master/report.pdf). You can also access the codes in the [RMarkdown file](https://github.com/williamagyapong/heart-failure/blob/master/report.Rmd).
 
 <!-- badges: start -->
 <!-- badges: end -->

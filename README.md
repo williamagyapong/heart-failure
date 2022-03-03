@@ -42,6 +42,8 @@ imbalance and handling outliers could enhance model performance.
 
 Please see the full report
 [here](https://github.com/williamagyapong/heart-failure/blob/master/report.pdf).
+You can also access the codes in the [RMarkdown
+file](https://github.com/williamagyapong/heart-failure/blob/master/report.Rmd).
 
 <!-- badges: start -->
 
