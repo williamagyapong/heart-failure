@@ -39,7 +39,7 @@ The early detection of people with cardiovascular diseases or who are at high ca
 
 ## Objective
 
-The dataset explored in this project contains 12 features that can be used to predict mortality by heart failure. The goal of this project, therefore, is to **identify an appropriate classification model that can accurately predict the survival of patients with heart failure**. 
+The dataset explored in this project contains 12 features that can be used to predict mortality by heart failure. The goal of this project, therefore, is to **identify an appropriate classification model that can accurately predict the mortality of patients with heart failure**. 
 
 Various classification models, as can be found in the Predictive Model section of this report, will be explored with the hope of coming up with a model that has high prediction accuracy. 
 
