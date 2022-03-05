@@ -38,7 +38,8 @@ failure.
 
 I consider this to be a preliminary analysis since more can be done to
 improve the predictive power. For instance, treating the issue of class
-imbalance and handling outliers could enhance model performance.
+imbalance and handling outliers could enhance model performance. Again, a formal
+modeling procedure such as PCA could be utilized to identify the most significant features.
 
 Please see the full report
 [here](https://github.com/williamagyapong/heart-failure/blob/master/report.pdf).
